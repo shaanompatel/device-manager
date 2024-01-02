@@ -3,6 +3,8 @@ from flask_cors import CORS
 import mysql.connector
 from mysql.connector import Error
 import pandas as pd
+import requests
+
 
 app = Flask(__name__)
 CORS(app)
@@ -11,6 +13,8 @@ ATTRIBUTES = ["device_id", "name", "serial_num", "port", "baud"]
 EDITABLE = ["name", "serial_num", "port", "baud"]
 
 connected_devices = []
+
+server_url = 'http://localhost:5001/update-devices'
 
 def create_server_connection(host_name, user_name, user_password, db_name):
     connection = None
@@ -61,9 +65,6 @@ def update_entries(connection, table, data):
 
 def fetch_devices():
     # here - scan for new USB devices and add them to the the table, don't fetch ones that are in the database but not connected
-    results = read_query(connection, "SELECT * FROM allDevices")
-    print(results)
-    all_serials = read_query(connection, "SELECT serial_num FROM allDevices")
     from_db = []
 
     for device in connected_devices:
@@ -72,18 +73,18 @@ def fetch_devices():
             read_query(connection, f"INSERT INTO `allDevices` (`name`,`serial_num`,`port`,`baud`) VALUES ('unnamed','{device}',-1,-1);")
             info = read_query(connection, f"SELECT * FROM allDevices WHERE serial_num='{device}'")
 
-        print(info)
-        # if table contains serial number, append full entry (fetch from table)
-        # if table does not contain serial number, add it to the table, then append it, then fetch from table
-
         from_db.append(info[0])
     df = pd.DataFrame(from_db, columns=ATTRIBUTES)
     data_dict = df.to_dict(orient='records')
+    data_dict = sorted(data_dict, key=lambda x: x['device_id'])
     return data_dict
 
 connection = create_server_connection("localhost", "shaan", 'password', "devices")
 
 ############### API ################
+@app.route('/health')
+def check():
+    return "OK"
 
 @app.route('/api/get-devices')
 def reload():
@@ -94,9 +95,12 @@ def edit():
     try:
         data = request.get_json()  # Get the JSON data from the request
         update_entries(connection, "allDevices", data)
+        response = requests.post(server_url, json=fetch_devices())
+        print(response.text)
         return jsonify({'message': 'JSON received successfully', 'data': data}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
 
 @app.route('/new-device', methods=['POST'])
 def update_device_list():
@@ -104,7 +108,7 @@ def update_device_list():
     try:
         data = request.get_json()
         connected_devices = list(data)
-        return jsonify({'message': 'JSON received successfully', 'data': data}), 200
+        return jsonify(fetch_devices())
     except Exception as e:
         return jsonify({'error': str(e)}), 400
  
