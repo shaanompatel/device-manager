@@ -3,10 +3,7 @@ from flask_cors import CORS
 import threading
 import device_manager
 import pyudev
-import usb.util
 import pprint
-import yaml
-import json
 import requests
 import subprocess
 
@@ -31,17 +28,9 @@ def get_all_devices():
 def reload_devices():
     global all_devices
     all_devices = get_all_devices()
-
-    dict = {item['serial_num']: item for item in all_devices_full_info}
-
-    # Update values in all_devices based on serial_number from updated
-    for item in all_devices:
-        serial_number = item['serial_num']
-        if serial_number in dict:
-            item.update(dict[serial_number])
     
-    print(pprint.pformat(all_devices))
-    print("\n")
+    # print(pprint.pformat(all_devices))
+    # print("\n")
     send_devices()
 
 def is_whole_usb_device(device):
@@ -52,7 +41,7 @@ def handle_usb_event(action, device):
     if is_whole_usb_device(device):
         print(f"USB Device {action}: {device['DEVNAME']}")
         
-        # handling code  for USB device events
+        # handling code for USB device events
         send_devices()
         gen_yaml()
 
@@ -65,14 +54,26 @@ def monitor_usb_events():
         handle_usb_event(action, device)
 
 def send_devices():
+    global all_devices_full_info
     serial_numbers = [d["serial_num"] for d in all_devices]
     response = requests.post(api_url + 'new-device', json=serial_numbers)
+    all_devices_full_info = response.json()
+    dict = {item['serial_num']: item for item in all_devices_full_info}
 
+    # Update values in all_devices based on serial_number from updated
+    for item in all_devices:
+        serial_number = item['serial_num']
+        if serial_number in dict:
+            item.update(dict[serial_number])
 
 def gen_yaml():
     file_path = '/etc/ser2net.yaml'
     config = ""
     for device in all_devices:
+        none_values = [key for key, value in device.items() if value is None or value == -1]
+        if none_values:
+            continue
+
         config += f"""\
 connection: &{device['name']}
     accepter: telnet,{device['port']}
@@ -89,15 +90,13 @@ connection: &{device['name']}
     with open(file_path, 'w') as file:
     # Write a string to the file
         file.write(config)
-    print(config)
     
     result = subprocess.run("sudo systemctl restart ser2net", shell=True, capture_output=True, text=True)
+    # result = subprocess.run("sudo ser2net -c /etc/ser2net.yaml", shell=True, capture_output=True, text=True)
     if result.returncode == 0:
         print("Command executed successfully.")
     else:
         print(f"Error: {result.stderr}")
-
-            
 
 ############ Flask ############
 app = Flask(__name__)
@@ -120,7 +119,6 @@ def receive_data():
             item.update(dict[serial_number])
     gen_yaml()
 
-
     # Process the received data and send a response
     response_data = {'message': 'Data received successfully'}
     return jsonify(response_data)
@@ -132,12 +130,6 @@ def run_flask():
 if __name__ == "__main__":
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.start()
-
-    response = requests.get(api_url + '')
-
-
     reload_devices()
     gen_yaml()
     monitor_usb_events()
-
-

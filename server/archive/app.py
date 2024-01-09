@@ -5,12 +5,11 @@ from mysql.connector import Error
 import pandas as pd
 import requests
 
-
 app = Flask(__name__)
 CORS(app)
 
 ATTRIBUTES = ["device_id", "name", "serial_num", "port", "baud"]
-EDITABLE = ["name", "serial_num", "port", "baud"]
+EDITABLE = ["name", "port", "baud"]
 
 connected_devices = []
 
@@ -96,7 +95,6 @@ def edit():
         data = request.get_json()  # Get the JSON data from the request
         update_entries(connection, "allDevices", data)
         response = requests.post(server_url, json=fetch_devices())
-        print(response.text)
         return jsonify({'message': 'JSON received successfully', 'data': data}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 400
